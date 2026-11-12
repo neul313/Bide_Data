@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Apple (AAPL) 주가 10대 계량 통계분석 대시보드</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- PapaParse for CSV parsing -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              dark: '#0f172a',
+              card: '#1e293b',
+              border: '#334155',
+              accent: '#38bdf8',
+              up: '#ef4444',
+              down: '#3b82f6'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700;800&display=swap');
+    body {
+      font-family: 'Pretendard', sans-serif;
+    }
+    .chart-container {
+      position: relative;
+      width: 100%;
+      height: 290px;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col antialiased">
+
+  <!-- 상단 네비게이션 헤더 -->
+  <header class="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 sm:px-8 py-3.5 flex items-center justify-between">
+    <div class="flex items-center space-x-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-slate-700 via-sky-600 to-sky-400 flex items-center justify-center text-white shadow-lg shadow-sky-500/20 text-xl font-bold">
+        <i class="fa-brands fa-apple"></i>
+      </div>
+      <div>
+        <div class="flex items-center space-x-2">
+          <h1 class="text-lg font-extrabold text-white tracking-tight">Apple (AAPL) 주가 통계분석 연구 대시보드</h1>
+          <span class="text-[11px] px-2 py-0.5 rounded-full bg-sky-950 text-sky-400 border border-sky-800 font-medium">10대 정량분석 모델</span>
+        </div>
+        <p class="text-xs text-slate-400">데이터셋: 2010.07 ~ 2020.07 (총 2,517 거래일 정밀 통계)</p>
+      </div>
+    </div>
+
+    <!-- 파일 업로드 / 재분석 버튼 -->
+    <div class="flex items-center space-x-3">
+      <label class="cursor-pointer text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3.5 py-2 rounded-xl transition flex items-center space-x-2">
+        <i class="fa-solid fa-file-csv text-sky-400"></i>
+        <span>다른 CSV 불러오기</span>
+        <input type="file" id="csvFileInput" accept=".csv" class="hidden" onchange="handleFileUpload(event)">
+      </label>
+      <button onclick="loadSampleData()" class="text-xs bg-sky-600 hover:bg-sky-500 text-white font-semibold px-4 py-2 rounded-xl shadow transition flex items-center space-x-1.5">
+        <i class="fa-solid fa-rotate-right"></i>
+        <span>데이터 새로고침</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- 메인 대시보드 본문 -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-8">
+
+    <!-- 상단 핵심 기술통계 KPI 요약 카드 (Summary) -->
+    <section>
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+          <i class="fa-solid fa-chart-line text-sky-400"></i>
+          <span>기술통계 기초 요약 (Descriptive Statistics Summary)</span>
+        </h2>
+        <span id="dataPeriodText" class="text-xs text-slate-500 font-mono">Loading data...</span>
+      </div>
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5" id="kpiContainer">
+        <!-- JS 동적 생성 -->
+      </div>
+    </section>
+
+    <!-- 인터랙티브 분석 필터 / 기간 선택 툴바 -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center space-x-2">
+        <span class="text-xs font-semibold text-slate-400 mr-1">분석 기간:</span>
+        <button onclick="setPeriod('all')" class="period-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-600 text-white transition">전체 (10년)</button>
+        <button onclick="setPeriod('5y')" class="period-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 transition">최근 5년</button>
+        <button onclick="setPeriod('3y')" class="period-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 transition">최근 3년</button>
+        <button onclick="setPeriod('1y')" class="period-btn px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700 transition">최근 1년</button>
+      </div>
+      <div class="flex items-center space-x-4 text-xs text-slate-400">
+        <div>표본 크기: <span id="sampleCount" class="font-bold text-white">0</span> 개 거래일</div>
+        <div class="hidden sm:block">|</div>
+        <div>총 누적 수익률: <span id="totalReturnText" class="font-bold text-rose-400">+0.0%</span></div>
+      </div>
+    </div>
+
+    <!-- 10대 계량 통계분석 그래프 섹션 그리드 -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+      <!-- 분석 1: 이동평균 추세 및 골든크로스 분석 -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center space-x-2">
+              <span class="w-6 h-6 rounded-lg bg-sky-950 text-sky-400 text-xs flex items-center justify-center font-bold">1</span>
+              <h3 class="font-bold text-white text-sm">시계열 추세 & 이동평균선 (SMA 20 / 60 / 200)</h3>
+            </div>
+            <span class="text-[11px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">Trend Analysis</span>
+          </div>
+          <p class="text-xs text-slate-400 mb-3">단기(20일), 중기(60일), 장기(200일) 이동평균을 통해 주가의 대세 상승 및 지지·저항선을 파악합니다.</p>
+        </div>
+        <div class="chart-container"><canvas id="chart1"></canvas></div>
+      </div>
+
+      <!-- 분석 2: 일별 로그 수익률 및 정규분포 검정 (히스토그램) -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center space-x-2">
+              <span class="w-6 h-6 rounded-lg bg-indigo-950 text-indigo-400 text-xs flex items-center justify-center font-bold">2</span>
+              <h3 class="font-bold text-white text-sm">일별 수익률 확률분포 (수익률 히스토그램)</h3>
+            </div>
+            <span class="text-[11px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">Distribution Test</span>
+          </div>
+          <p class="text-xs text-slate-400 mb-3">일별 등락률의 빈도 분포와 정규분포 적합도를 검증하고 왜도(Skewness)와 첨도(Kurtosis)를 확인합니다.</p>
+        </div>
+        <div class="chart-container"><canvas id="chart2"></canvas></div>
+      </div>
+
+      <!-- 분석 3: 변동성 추정 (20일 롤링 역사적 변동성 HV) -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center space-x-2">
+              <span class="w-6 h-6 rounded-lg bg-emerald-950 text-emerald-400 text-xs flex items-center justify-center font-bold">3</span>
+              <h3 class="font-bold text-white text-sm">역사적 롤링 변동성 추이 (Historical Volatility 20일)</h3>
+            </div>
+            <span class="text-[11px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">Annualized Risk</span>
+          </div>
+          <p class="text-xs text-slate-400 mb-3">20일 단위 표준편차를 연율화(√252)하여 시장 충격기(예: 2020년 팬데믹 급락장)의 리스크 폭등을 정량화합니다.</p>
+        </div>
+        <div class="chart-container"><canvas id="chart3"></canvas></div>
+      </div>
+
+      <!-- 분석 4: 볼린저 밴드 (Bollinger Bands ±2σ) -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center space-x-2">
+              <span class="w-6 h-6 rounded-lg bg-amber-950 text-amber-400 text-xs flex items-center justify-center font-bold">4</span>
+              <h3 class="font-bold text-white text-sm">볼린저 밴드 분석 (Bollinger Bands 20일, ±2σ)</h3>
+            </div>
+            <span class="text-[11px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">Statistical Boundary</span>
+          </div>
+          <p class="text-xs text-slate-400 mb-3">통계적 신뢰구간(약 95.4%)을 주가 궤적에 대입하여 과매수(Upper Band)와 과매도(Lower Band) 구간을 식별합니다.</p>
+        </div>
+        <div class="chart-container"><canvas id="chart4"></canvas></div>
+      </div>
+
+      <!-- 분석 5: 최대 낙폭 분석 (MDD: Maximum Drawdown) -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center space-x-2">
+              <span class="w-6 h-6 rounded-lg bg-rose-950 text-rose-400 text-xs flex items-center justify-center font-bold">5</span>
+              <h3 class="font-bold text-white text-sm">최대 하락률 및 고점 대비 낙폭 (Drawdown & MDD)</h3>
+            </div>
+            <span class="text-[11px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">Downside Risk</span>
+          </div>
+          <p class="text-xs text-slate-400 mb-3">역대 최고점(ATH) 갱신 이후 발생한 최대 손실폭을 계산하여 최악의 시장 상황에서의 감내 위험을 분석합니다.</p>
+        </div>
+        <div class="chart-container"><canvas id="chart5"></canvas></div>
+      </div>
+
+      <!-- 분석 6: 주가 변동률 vs 거래량 상관분석 (Scatter & Correlation) -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center space-x-2">
+              <span class="w-6 h-6 rounded-lg bg-purple-950 text-purple-400 text-xs flex items-center justify-center font-bold">6</span>
+              <h3 class="font-bold text-white text-sm">주가 변동률 대비 거래량 산점도 (Price-Volume Correlation)</h3>
+            </div>
+            <span id="corrBadge" class="text-[11px] px-2 py-0.5 rounded bg-slate-800 text-purple-300">r = 0.00</span>
+          </div>
+          <p class="text-xs text-slate-400 mb-3">피어슨 상관계수(r)를 산출하여 주가의 급등락과 거래량 폭발 간의 통계적 상관성을 평가합니다.</p>
+        </div>
+        <div class="chart-container"><canvas id="chart6"></canvas></div>
+      </div>
+
+      <!-- 분석 7: 연도별 누적 수익률 비교 (CAGR 및 연간 성과) -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center space-x-2">
+              <span class="w-6 h-6 rounded-lg bg-cyan-950 text-cyan-400 text-xs flex items-center justify-center font-bold">7</span>
+              <h3 class="font-bold text-white text-sm">연도별 수익률 통계 (Annual Return Performance)</h3>
+            </div>
+            <span class="text-[11px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">Yearly Yield</span>
+          </div>
+          <p class="text-xs text-slate-400 mb-3">각 연도별 시가 대비 종가 수익률을 막대그래프로 집계하여 연도별 성과 격차를 한눈에 파악합니다.</p>
+        </div>
+        <div class="chart-container"><canvas id="chart7"></canvas></div>
+      </div>
+
+      <!-- 분석 8: 요일별 계절성 분석 (Day-of-Week Effect) -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center space-x-2">
+              <span class="w-6 h-6 rounded-lg bg-teal-950 text-teal-400 text-xs flex items-center justify-center font-bold">8</span>
+              <h3 class="font-bold text-white text-sm">요일별 평균 수익률 및 상승 확률 (Day-of-Week Effect)</h3>
+            </div>
+            <span class="text-[11px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">Seasonality</span>
+          </div>
+          <p class="text-xs text-slate-400 mb-3">월·화·수·목·금 요일별 주가 상승 확률과 평균 일일 수익률을 분석하여 요일 효과(Calendar Anomaly)를 검정합니다.</p>
+        </div>
+        <div class="chart-container"><canvas id="chart8"></canvas></div>
+      </div>
+
+      <!-- 분석 9: 월별 평균 수익률 히트맵 성과 (Monthly Seasonality) -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center space-x-2">
+              <span class="w-6 h-6 rounded-lg bg-yellow-950 text-yellow-400 text-xs flex items-center justify-center font-bold">9</span>
+              <h3 class="font-bold text-white text-sm">월별(1~12월) 평균 수익률 패턴 (Monthly Return Pattern)</h3>
+            </div>
+            <span class="text-[11px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">Month Effect</span>
+          </div>
+          <p class="text-xs text-slate-400 mb-3">역대 애플 신제품 발표 시기(9~10월) 및 실적 발표 분기별 계절적 주가 상승 패턴을 통계적으로 비교합니다.</p>
+        </div>
+        <div class="chart-container"><canvas id="chart9"></canvas></div>
+      </div>
+
+      <!-- 분석 10: 일중 고가-저가 스프레드 변동성 (Intraday High-Low Range) -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center space-x-2">
+              <span class="w-6 h-6 rounded-lg bg-fuchsia-950 text-fuchsia-400 text-xs flex items-center justify-center font-bold">10</span>
+              <h3 class="font-bold text-white text-sm">일중 가격 범위(High-Low Spread %) 및 추세선</h3>
+            </div>
+            <span class="text-[11px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">Intraday Volatility</span>
+          </div>
+          <p class="text-xs text-slate-400 mb-3">당일 최저가 대비 최고가의 비율((High - Low)/Low * 100)을 추적하여 장중 가격 탄력성을 계량화합니다.</p>
+        </div>
+        <div class="chart-container"><canvas id="chart10"></canvas></div>
+      </div>
+
+    </div>
+
+    <!-- 통계 분석 수식 및 지표 해설 테이블 -->
+    <section class="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+      <h3 class="text-base font-bold text-white mb-4 flex items-center gap-2">
+        <i class="fa-solid fa-calculator text-sky-400"></i>
+        <span>10대 계량 통계 지표 정의 및 산출 수식</span>
+      </h3>
+      <div class="overflow-x-auto text-xs">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="border-b border-slate-800 text-slate-400 bg-slate-950/50">
+              <th class="py-2.5 px-3 font-semibold">지표명</th>
+              <th class="py-2.5 px-3 font-semibold">산출 방법 / 통계 수식</th>
+              <th class="py-2.5 px-3 font-semibold">해석 기준 및 금융적 의미</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-800/60 text-slate-300">
+            <tr>
+              <td class="py-2 px-3 font-semibold text-white">단순이동평균 (SMA)</td>
+              <td class="py-2 px-3 font-mono text-sky-300">SMA_t = (1/N) * Σ P_(t-i)</td>
+              <td class="py-2 px-3">단기선이 장기선을 상향 돌파 시 골든크로스(매수 신호), 하향 이탈 시 데드크로스</td>
+            </tr>
+            <tr>
+              <td class="py-2 px-3 font-semibold text-white">일별 로그 수익률</td>
+              <td class="py-2 px-3 font-mono text-sky-300">r_t = ln(Close_t / Close_(t-1))</td>
+              <td class="py-2 px-3">정규분포 가정 검정 시 비대칭성(왜도) 및 극단값 출현 빈도(첨도) 분석의 기초</td>
+            </tr>
+            <tr>
+              <td class="py-2 px-3 font-semibold text-white">역사적 연율화 변동성</td>
+              <td class="py-2 px-3 font-mono text-sky-300">HV = σ_20 * sqrt(252) * 100%</td>
+              <td class="py-2 px-3">미국 연간 영업일(252일) 기준 위험도 척도. 높을수록 급격한 가격 변동 위험</td>
+            </tr>
+            <tr>
+              <td class="py-2 px-3 font-semibold text-white">볼린저 밴드 (BB)</td>
+              <td class="py-2 px-3 font-mono text-sky-300">Upper/Lower = SMA_20 ± 2 * σ_20</td>
+              <td class="py-2 px-3">정규분포 2표준편차 범위로, 약 95%의 주가가 밴드 내부에서 수렴 및 발산 반복</td>
+            </tr>
+            <tr>
+              <td class="py-2 px-3 font-semibold text-white">최대 낙폭 (MDD)</td>
+              <td class="py-2 px-3 font-mono text-sky-300">DD_t = (Close_t - Peak_t) / Peak_t</td>
+              <td class="py-2 px-3">역대 최고점 매수 후 최저점 매도 시 겪을 수 있는 최악의 이론적 최대 손실률</td>
+            </tr>
+            <tr>
+              <td class="py-2 px-3 font-semibold text-white">피어슨 상관계수 (r)</td>
+              <td class="py-2 px-3 font-mono text-sky-300">Cov(X, Y) / (σ_X * σ_Y)</td>
+              <td class="py-2 px-3">절대 주가 변동폭과 당일 거래량 간의 선형 상관성 측정 (-1 ~ +1)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- 푸터 -->
+  <footer class="bg-slate-900 border-t border-slate-800 py-6 text-center text-xs text-slate-500">
+    <p>© 2026 Apple (AAPL) Quantitative Stock Analysis Dashboard. Generated without build tools (Pure HTML5/CSS/JS).</p>
+  </footer>
+
+  <!-- 메인 스크립트: 통계 알고리즘 및 차트 렌더러 -->
+  <script>
+    // 전역 차트 인스턴스 보관
+    let charts = {};
+    let rawData = [];
+    let activeData = [];
+
+    // 페이지 로드 시 기본 CSV 로드
+    window.addEventListener('DOMContentLoaded', () => {
+      loadSampleData();
+    });
+
+    // 로컬 CSV 파일 자동 fetch (동일 폴더의 '애플 주가.csv')
+    function loadSampleData() {
+      // fetch로 애플 주가.csv 파일 요청 (인코딩 대응)
+      fetch('애플 주가.csv')
+        .then(response => {
+          if (!response.ok) throw new Error('Network error');
+          return response.text();
+        })
+        .then(csvText => {
+          parseAndInit(csvText);
+        })
+        .catch(err => {
+          console.warn('Direct fetch failed (likely local file:// protocol), using fallback upload prompt.', err);
+          alert('브라우저 보안(CORS) 정책상 로컬 html 파일에서는 직접 fetch가 차단될 수 있습니다. 상단의 [다른 CSV 불러오기] 버튼으로 폴더의 "애플 주가.csv"를 선택해 주시면 즉시 분석됩니다!');
+        });
+    }
+
+    // 파일 수동 업로드 핸들러
+    function handleFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        parseAndInit(e.target.result);
+      };
+      reader.readAsText(file, 'utf-8');
+    }
+
+    // CSV 파싱 및 데이터 정제
+    function parseAndInit(csvString) {
+      Papa.parse(csvString, {
+        header: true,
+        dynamicTyping: true,
+        skipEmptyLines: true,
+        complete: function(results) {
+          const rows = results.data.filter(r => r.Date && r.Close !== null && !isNaN(r.Close));
+          // 날짜 오름차순 정렬
+          rows.sort((a, b) => new Date(a.Date) - new Date(b.Date));
+          rawData = rows;
+          setPeriod('all');
+        }
+      });
+    }
+
+    // 기간 필터 적용
+    function setPeriod(period) {
+      document.querySelectorAll('.period-btn').forEach(btn => {
+        btn.classList.remove('bg-sky-600', 'text-white');
+        btn.classList.add('bg-slate-800', 'text-slate-300');
+      });
+      event?.target?.classList?.remove('bg-slate-800', 'text-slate-300');
+      event?.target?.classList?.add('bg-sky-600', 'text-white');
+
+      if (!rawData || rawData.length === 0) return;
+
+      if (period === 'all') {
+        activeData = [...rawData];
+      } else {
+        const lastDate = new Date(rawData[rawData.length - 1].Date);
+        let cutoffYear = 10;
+        if (period === '5y') cutoffYear = 5;
+        if (period === '3y') cutoffYear = 3;
+        if (period === '1y') cutoffYear = 1;
+        const cutoffDate = new Date(lastDate);
+        cutoffDate.setFullYear(cutoffDate.getFullYear() - cutoffYear);
+
+        activeData = rawData.filter(d => new Date(d.Date) >= cutoffDate);
+      }
+
+      runStatisticalAnalysis(activeData);
+    }
+
+    // 핵심 통계 계산 및 전체 10개 차트 렌더링
+    function runStatisticalAnalysis(data) {
+      if (!data || data.length === 0) return;
+
+      const n = data.length;
+      document.getElementById('sampleCount').innerText = n.toLocaleString();
+      document.getElementById('dataPeriodText').innerText = `${data[0].Date} ~ ${data[n-1].Date}`;
+
+      // 1. 기본 배열 준비
+      const dates = data.map(d => d.Date);
+      const closes = data.map(d => d.Close);
+      const opens = data.map(d => d.Open);
+      const highs = data.map(d => d.High);
+      const lows = data.map(d => d.Low);
+      const volumes = data.map(d => d.Volume);
+
+      // 2. 일별 수익률 (Daily Return %)
+      const returns = [0];
+      for (let i = 1; i < n; i++) {
+        const ret = ((closes[i] - closes[i - 1]) / closes[i - 1]) * 100;
+        returns.push(ret);
+      }
+
+      // 3. 기술통계 (평균, 표준편차, 중앙값, 왜도, 첨도)
+      const meanReturn = returns.reduce((a, b) => a + b, 0) / n;
+      const variance = returns.reduce((sum, r) => sum + Math.pow(r - meanReturn, 2), 0) / (n - 1);
+      const stdDev = Math.sqrt(variance);
+      const annVol = stdDev * Math.sqrt(252); // 연율화 변동성
+
+      // 총 누적 수익률
+      const totalReturn = ((closes[n - 1] - closes[0]) / closes[0]) * 100;
+      const totalReturnEl = document.getElementById('totalReturnText');
+      totalReturnEl.innerText = `${totalReturn >= 0 ? '+' : ''}${totalReturn.toFixed(1)}%`;
+      totalReturnEl.className = `font-bold ${totalReturn >= 0 ? 'text-rose-400' : 'text-blue-400'}`;
+
+      // 최고가 및 최저가
+      const maxPrice = Math.max(...closes);
+      const minPrice = Math.min(...closes);
+
+      // MDD 계산
+      let peak = closes[0];
+      let maxDD = 0;
+      const drawdowns = [];
+      for (let i = 0; i < n; i++) {
+        if (closes[i] > peak) peak = closes[i];
+        const dd = ((closes[i] - peak) / peak) * 100;
+        drawdowns.push(dd);
+        if (dd < maxDD) maxDD = dd;
+      }
+
+      // 샤프 지수 추정 (무위험 수익률 1.5% 가정)
+      const annualizedReturn = (Math.pow(closes[n - 1] / closes[0], 252 / n) - 1) * 100;
+      const sharpeRatio = annVol > 0 ? (annualizedReturn - 1.5) / annVol : 0;
+
+      // KPI 카드 렌더링
+      renderKPICards({
+        latestPrice: closes[n - 1],
+        totalReturn: totalReturn,
+        annualizedReturn: annualizedReturn,
+        stdDev: stdDev,
+        annVol: annVol,
+        mdd: maxDD,
+        sharpeRatio: sharpeRatio,
+        maxPrice: maxPrice,
+        minPrice: minPrice
+      });
+
+      // 10대 차트 생성
+      renderChart1_Trend(dates, closes);
+      renderChart2_Histogram(returns);
+      renderChart3_RollingVol(dates, returns);
+      renderChart4_Bollinger(dates, closes);
+      renderChart5_MDD(dates, drawdowns);
+      renderChart6_Scatter(returns, volumes);
+      renderChart7_YearlyReturn(data);
+      renderChart8_DayOfWeek(data);
+      renderChart9_MonthlySeasonality(data);
+      renderChart10_IntradayRange(dates, highs, lows);
+    }
+
+    // KPI 카드 렌더러
+    function renderKPICards(kpi) {
+      const container = document.getElementById('kpiContainer');
+      container.innerHTML = `
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5">
+          <span class="text-[11px] text-slate-400 block mb-1">최종 종가 (Close)</span>
+          <span class="text-xl font-black text-white">$${kpi.latestPrice.toFixed(2)}</span>
+          <span class="text-[10px] block text-slate-500 mt-1">최고 $${kpi.maxPrice.toFixed(2)} / 최저 $${kpi.minPrice.toFixed(2)}</span>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5">
+          <span class="text-[11px] text-slate-400 block mb-1">연평균 복리수익 (CAGR)</span>
+          <span class="text-xl font-black text-rose-400">+${kpi.annualizedReturn.toFixed(1)}%</span>
+          <span class="text-[10px] block text-slate-500 mt-1">총 누적 +${kpi.totalReturn.toFixed(0)}%</span>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5">
+          <span class="text-[11px] text-slate-400 block mb-1">일별 변동성 (Std Dev)</span>
+          <span class="text-xl font-black text-sky-400">${kpi.stdDev.toFixed(2)}%</span>
+          <span class="text-[10px] block text-slate-500 mt-1">1일 표준편차 (σ)</span>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5">
+          <span class="text-[11px] text-slate-400 block mb-1">연율화 변동성 (HV)</span>
+          <span class="text-xl font-black text-amber-400">${kpi.annVol.toFixed(1)}%</span>
+          <span class="text-[10px] block text-slate-500 mt-1">σ * √252 위험 지표</span>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5">
+          <span class="text-[11px] text-slate-400 block mb-1">최대 낙폭 (MDD)</span>
+          <span class="text-xl font-black text-rose-500">${kpi.mdd.toFixed(1)}%</span>
+          <span class="text-[10px] block text-slate-500 mt-1">고점 대비 최대 손실폭</span>
+        </div>
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5">
+          <span class="text-[11px] text-slate-400 block mb-1">샤프 지수 (Sharpe)</span>
+          <span class="text-xl font-black text-emerald-400">${kpi.sharpeRatio.toFixed(2)}</span>
+          <span class="text-[10px] block text-slate-500 mt-1">위험 대비 보상 비율</span>
+        </div>
+      `;
+    }
+
+    // 헬퍼: 이동평균(SMA) 계산
+    function calculateSMA(arr, period) {
+      const sma = [];
+      for (let i = 0; i < arr.length; i++) {
+        if (i < period - 1) {
+          sma.push(null);
+        } else {
+          let sum = 0;
+          for (let j = 0; j < period; j++) {
+            sum += arr[i - j];
+          }
+          sma.push(sum / period);
+        }
+      }
+      return sma;
+    }
+
+    // 헬퍼: 차트 파괴 후 재생성
+    function recreateChart(id, config) {
+      if (charts[id]) {
+        charts[id].destroy();
+      }
+      const ctx = document.getElementById(id).getContext('2d');
+      charts[id] = new Chart(ctx, config);
+    }
+
+    // 차트 1: 이동평균선
+    function renderChart1_Trend(dates, closes) {
+      // 렌더링 성능을 위해 데이터가 500개 초과면 샘플링 표시
+      const step = Math.max(1, Math.floor(dates.length / 300));
+      const sDates = dates.filter((_, i) => i % step === 0);
+      const sCloses = closes.filter((_, i) => i % step === 0);
+      const sma20 = calculateSMA(closes, 20).filter((_, i) => i % step === 0);
+      const sma60 = calculateSMA(closes, 60).filter((_, i) => i % step === 0);
+      const sma200 = calculateSMA(closes, 200).filter((_, i) => i % step === 0);
+
+      recreateChart('chart1', {
+        type: 'line',
+        data: {
+          labels: sDates,
+          datasets: [
+            { label: '종가 (Close)', data: sCloses, borderColor: '#38bdf8', borderWidth: 1.5, pointRadius: 0 },
+            { label: '20일선 (SMA 20)', data: sma20, borderColor: '#f59e0b', borderWidth: 1, borderDash: [2, 2], pointRadius: 0 },
+            { label: '60일선 (SMA 60)', data: sma60, borderColor: '#10b981', borderWidth: 1, pointRadius: 0 },
+            { label: '200일선 (SMA 200)', data: sma200, borderColor: '#ef4444', borderWidth: 1.5, pointRadius: 0 }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: '#94a3b8', boxWidth: 10, font: { size: 10 } } } },
+          scales: {
+            x: { ticks: { color: '#64748b', maxTicksLimit: 6, font: { size: 10 } }, grid: { color: '#1e293b' } },
+            y: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: '#1e293b' } }
+          }
+        }
+      });
+    }
+
+    // 차트 2: 수익률 히스토그램
+    function renderChart2_Histogram(returns) {
+      const validRet = returns.slice(1);
+      const binWidth = 0.5; // 0.5% 간격
+      const minBin = -6;
+      const maxBin = 6;
+      const bins = {};
+      for (let b = minBin; b <= maxBin; b += binWidth) {
+        bins[b.toFixed(1)] = 0;
+      }
+
+      validRet.forEach(r => {
+        let rounded = Math.round(r / binWidth) * binWidth;
+        if (rounded < minBin) rounded = minBin;
+        if (rounded > maxBin) rounded = maxBin;
+        const key = rounded.toFixed(1);
+        if (bins[key] !== undefined) bins[key]++;
+      });
+
+      const labels = Object.keys(bins).map(k => `${k}%`);
+      const counts = Object.values(bins);
+
+      recreateChart('chart2', {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: '거래일 빈도수 (Days)',
+            data: counts,
+            backgroundColor: Object.keys(bins).map(k => parseFloat(k) >= 0 ? 'rgba(239, 68, 68, 0.7)' : 'rgba(59, 130, 246, 0.7)'),
+            borderRadius: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: '#64748b', maxTicksLimit: 12, font: { size: 9 } }, grid: { display: false } },
+            y: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: '#1e293b' } }
+          }
+        }
+      });
+    }
+
+    // 차트 3: 롤링 역사적 변동성 (20일)
+    function renderChart3_RollingVol(dates, returns) {
+      const rollingHV = [];
+      const window = 20;
+      for (let i = 0; i < returns.length; i++) {
+        if (i < window - 1) {
+          rollingHV.push(null);
+        } else {
+          const slice = returns.slice(i - window + 1, i + 1);
+          const mean = slice.reduce((a, b) => a + b, 0) / window;
+          const variance = slice.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / (window - 1);
+          const hv = Math.sqrt(variance) * Math.sqrt(252);
+          rollingHV.push(hv);
+        }
+      }
+
+      const step = Math.max(1, Math.floor(dates.length / 300));
+      const sDates = dates.filter((_, i) => i % step === 0);
+      const sHV = rollingHV.filter((_, i) => i % step === 0);
+
+      recreateChart('chart3', {
+        type: 'line',
+        data: {
+          labels: sDates,
+          datasets: [{
+            label: '연율화 변동성 (HV 20일 %)',
+            data: sHV,
+            borderColor: '#10b981',
+            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+            fill: true,
+            borderWidth: 1.5,
+            pointRadius: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: '#94a3b8', font: { size: 10 } } } },
+          scales: {
+            x: { ticks: { color: '#64748b', maxTicksLimit: 6, font: { size: 10 } }, grid: { color: '#1e293b' } },
+            y: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: '#1e293b' } }
+          }
+        }
+      });
+    }
+
+    // 차트 4: 볼린저 밴드
+    function renderChart4_Bollinger(dates, closes) {
+      const window = 20;
+      const upper = [];
+      const lower = [];
+      const middle = calculateSMA(closes, window);
+
+      for (let i = 0; i < closes.length; i++) {
+        if (i < window - 1) {
+          upper.push(null);
+          lower.push(null);
+        } else {
+          const slice = closes.slice(i - window + 1, i + 1);
+          const mean = middle[i];
+          const variance = slice.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / window;
+          const std = Math.sqrt(variance);
+          upper.push(mean + 2 * std);
+          lower.push(mean - 2 * std);
+        }
+      }
+
+      const step = Math.max(1, Math.floor(dates.length / 300));
+      const sDates = dates.filter((_, i) => i % step === 0);
+      const sCloses = closes.filter((_, i) => i % step === 0);
+      const sUpper = upper.filter((_, i) => i % step === 0);
+      const sMiddle = middle.filter((_, i) => i % step === 0);
+      const sLower = lower.filter((_, i) => i % step === 0);
+
+      recreateChart('chart4', {
+        type: 'line',
+        data: {
+          labels: sDates,
+          datasets: [
+            { label: '상단 밴드 (+2σ)', data: sUpper, borderColor: 'rgba(245, 158, 11, 0.6)', borderWidth: 1, borderDash: [3, 3], pointRadius: 0 },
+            { label: '중심선 (SMA 20)', data: sMiddle, borderColor: '#f59e0b', borderWidth: 1, pointRadius: 0 },
+            { label: '하단 밴드 (-2σ)', data: sLower, borderColor: 'rgba(245, 158, 11, 0.6)', borderWidth: 1, borderDash: [3, 3], pointRadius: 0 },
+            { label: '종가 (Close)', data: sCloses, borderColor: '#38bdf8', borderWidth: 1.5, pointRadius: 0 }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: '#94a3b8', font: { size: 10 }, boxWidth: 10 } } },
+          scales: {
+            x: { ticks: { color: '#64748b', maxTicksLimit: 6, font: { size: 10 } }, grid: { color: '#1e293b' } },
+            y: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: '#1e293b' } }
+          }
+        }
+      });
+    }
+
+    // 차트 5: 낙폭 (Drawdown & MDD)
+    function renderChart5_MDD(dates, drawdowns) {
+      const step = Math.max(1, Math.floor(dates.length / 300));
+      const sDates = dates.filter((_, i) => i % step === 0);
+      const sDD = drawdowns.filter((_, i) => i % step === 0);
+
+      recreateChart('chart5', {
+        type: 'line',
+        data: {
+          labels: sDates,
+          datasets: [{
+            label: '고점 대비 하락률 (Drawdown %)',
+            data: sDD,
+            borderColor: '#ef4444',
+            backgroundColor: 'rgba(239, 68, 68, 0.25)',
+            fill: true,
+            borderWidth: 1.5,
+            pointRadius: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: '#94a3b8', font: { size: 10 } } } },
+          scales: {
+            x: { ticks: { color: '#64748b', maxTicksLimit: 6, font: { size: 10 } }, grid: { color: '#1e293b' } },
+            y: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: '#1e293b' } }
+          }
+        }
+      });
+    }
+
+    // 차트 6: 주가변동률 vs 거래량 산점도 & 상관계수
+    function renderChart6_Scatter(returns, volumes) {
+      // 300개 무작위 샘플링
+      const points = [];
+      const step = Math.max(1, Math.floor(returns.length / 300));
+      let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
+      let count = 0;
+
+      for (let i = 1; i < returns.length; i += step) {
+        const x = returns[i];
+        const y = volumes[i] / 1000000; // 백만 단위
+        points.push({ x: x, y: y });
+
+        sumX += x;
+        sumY += y;
+        sumXY += x * y;
+        sumX2 += x * x;
+        sumY2 += y * y;
+        count++;
+      }
+
+      // 피어슨 상관계수
+      const numerator = count * sumXY - sumX * sumY;
+      const denominator = Math.sqrt((count * sumX2 - sumX * sumX) * (count * sumY2 - sumY * sumY));
+      const r = denominator !== 0 ? numerator / denominator : 0;
+      document.getElementById('corrBadge').innerText = `피어슨 r = ${r.toFixed(3)}`;
+
+      recreateChart('chart6', {
+        type: 'scatter',
+        data: {
+          datasets: [{
+            label: '일별 데이터 (수익률 % vs 거래량 M)',
+            data: points,
+            backgroundColor: 'rgba(192, 132, 252, 0.6)',
+            pointRadius: 3
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { title: { display: true, text: '수익률 (%)', color: '#64748b', font: { size: 10 } }, ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: '#1e293b' } },
+            y: { title: { display: true, text: '거래량 (백만 주)', color: '#64748b', font: { size: 10 } }, ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: '#1e293b' } }
+          }
+        }
+      });
+    }
+
+    // 차트 7: 연도별 수익률
+    function renderChart7_YearlyReturn(data) {
+      const yearly = {};
+      data.forEach(d => {
+        const year = d.Date.split('-')[0];
+        if (!yearly[year]) yearly[year] = { first: d.Close, last: d.Close };
+        yearly[year].last = d.Close;
+      });
+
+      const years = Object.keys(yearly);
+      const yearReturns = years.map(y => {
+        const f = yearly[y].first;
+        const l = yearly[y].last;
+        return ((l - f) / f) * 100;
+      });
+
+      recreateChart('chart7', {
+        type: 'bar',
+        data: {
+          labels: years,
+          datasets: [{
+            label: '연간 수익률 (%)',
+            data: yearReturns,
+            backgroundColor: yearReturns.map(r => r >= 0 ? '#ef4444' : '#3b82f6'),
+            borderRadius: 5
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { display: false } },
+            y: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: '#1e293b' } }
+          }
+        }
+      });
+    }
+
+    // 차트 8: 요일별 계절성 (월~금)
+    function renderChart8_DayOfWeek(data) {
+      const dayNames = ['월', '화', '수', '목', '금'];
+      const dayReturns = [[], [], [], [], []];
+
+      for (let i = 1; i < data.length; i++) {
+        const dt = new Date(data[i].Date);
+        const day = dt.getDay(); // 1=월, 5=금
+        if (day >= 1 && day <= 5) {
+          const ret = ((data[i].Close - data[i - 1].Close) / data[i - 1].Close) * 100;
+          dayReturns[day - 1].push(ret);
+        }
+      }
+
+      const avgReturns = dayReturns.map(arr => arr.length > 0 ? (arr.reduce((a, b) => a + b, 0) / arr.length) : 0);
+      const winRates = dayReturns.map(arr => {
+        const wins = arr.filter(r => r > 0).length;
+        return arr.length > 0 ? (wins / arr.length) * 100 : 0;
+      });
+
+      recreateChart('chart8', {
+        type: 'bar',
+        data: {
+          labels: dayNames,
+          datasets: [
+            {
+              label: '평균 일일 수익률 (%)',
+              data: avgReturns,
+              backgroundColor: '#14b8a6',
+              yAxisID: 'y'
+            },
+            {
+              label: '상승 확률 (%)',
+              data: winRates,
+              type: 'line',
+              borderColor: '#f59e0b',
+              borderWidth: 2,
+              pointRadius: 4,
+              yAxisID: 'y1'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: '#94a3b8', font: { size: 10 } } } },
+          scales: {
+            x: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { display: false } },
+            y: { position: 'left', ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: '#1e293b' } },
+            y1: { position: 'right', min: 40, max: 70, ticks: { color: '#f59e0b', font: { size: 10 } }, grid: { display: false } }
+          }
+        }
+      });
+    }
+
+    // 차트 9: 월별(1~12월) 평균 수익률
+    function renderChart9_MonthlySeasonality(data) {
+      const monthNames = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
+      const monthBuckets = Array.from({ length: 12 }, () => []);
+
+      for (let i = 1; i < data.length; i++) {
+        const m = new Date(data[i].Date).getMonth(); // 0~11
+        const ret = ((data[i].Close - data[i - 1].Close) / data[i - 1].Close) * 100;
+        monthBuckets[m].push(ret);
+      }
+
+      const avgMonthRet = monthBuckets.map(arr => arr.length > 0 ? (arr.reduce((a, b) => a + b, 0) / arr.length) : 0);
+
+      recreateChart('chart9', {
+        type: 'bar',
+        data: {
+          labels: monthNames,
+          datasets: [{
+            label: '월평균 수익률 (%)',
+            data: avgMonthRet,
+            backgroundColor: avgMonthRet.map(v => v >= 0 ? '#fbbf24' : '#60a5fa'),
+            borderRadius: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { display: false } },
+            y: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: '#1e293b' } }
+          }
+        }
+      });
+    }
+
+    // 차트 10: 일중 고가-저가 스프레드 (High - Low Range %)
+    function renderChart10_IntradayRange(dates, highs, lows) {
+      const spreads = [];
+      for (let i = 0; i < highs.length; i++) {
+        const range = ((highs[i] - lows[i]) / lows[i]) * 100;
+        spreads.push(range);
+      }
+
+      const sma20Spread = calculateSMA(spreads, 20);
+      const step = Math.max(1, Math.floor(dates.length / 300));
+      const sDates = dates.filter((_, i) => i % step === 0);
+      const sSpreads = spreads.filter((_, i) => i % step === 0);
+      const sSMA = sma20Spread.filter((_, i) => i % step === 0);
+
+      recreateChart('chart10', {
+        type: 'line',
+        data: {
+          labels: sDates,
+          datasets: [
+            {
+              label: '장중 변동폭 ((High-Low)/Low %)',
+              data: sSpreads,
+              borderColor: 'rgba(217, 70, 239, 0.4)',
+              borderWidth: 1,
+              pointRadius: 0
+            },
+            {
+              label: '20일 이동평균 (추세)',
+              data: sSMA,
+              borderColor: '#e879f9',
+              borderWidth: 2,
+              pointRadius: 0
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: '#94a3b8', font: { size: 10 } } } },
+          scales: {
+            x: { ticks: { color: '#64748b', maxTicksLimit: 6, font: { size: 10 } }, grid: { color: '#1e293b' } },
+            y: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: '#1e293b' } }
+          }
+        }
+      });
+    }
+  </script>
+</body>
+</html>
